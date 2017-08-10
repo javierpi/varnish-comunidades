@@ -1,9 +1,9 @@
 director drupal round-robin {
 	{
-	        .backend = server1;
+	        .backend = drupal1;
 	}
 	{
-	        .backend = server2;
+	        .backend = drupal2;
 	}
 }
 
