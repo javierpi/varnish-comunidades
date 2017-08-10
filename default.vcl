@@ -48,62 +48,62 @@ sub vcl_recv {
 	
 	
 		
-		set req.backend = drupal;
+	set req.backend = drupal;
 
-		#  Use anonymous, cached pages if all backends are down.
-		if (!req.backend.healthy) {
-			#unset req.http.Cookie;
-			error 755 "";
-		}
-		
+	#  Use anonymous, cached pages if all backends are down.
+	if (!req.backend.healthy) {
+		#unset req.http.Cookie;
+		error 755 "";
+	}
 	
 
-		# Allow the backend to serve up stale content if it is responding slowly.
-		set req.grace = 600s;
 
-		# Client IP is forwarded (instead of the) además del proxy 
-		if (req.restarts == 0) {
-			if (req.http.x-forwarded-for) {
-				set req.http.X-Forwarded-For = req.http.X-Forwarded-For + ", " + client.ip;
-			} else {
-				set req.http.X-Forwarded-For = client.ip;
-			}
+	# Allow the backend to serve up stale content if it is responding slowly.
+	set req.grace = 600s;
+
+	# Client IP is forwarded (instead of the) además del proxy 
+	if (req.restarts == 0) {
+		if (req.http.x-forwarded-for) {
+			set req.http.X-Forwarded-For = req.http.X-Forwarded-For + ", " + client.ip;
+		} else {
+			set req.http.X-Forwarded-For = client.ip;
 		}
+	}
+	 
+	
+	call deny_admin_drupal;
 		 
-		
-		call deny_admin_drupal;
-			 
-		# Always cache the following file types for all users. This list of extensions
-		# appears twice, once here and again in vcl_fetch so make sure you edit both
-		# and keep them equal.
-		if (req.url ~ "(?i)\.(pdf|asc|dat|txt|doc|docx|xls|ppt|tgz|csv|png|gif|jpeg|jpg|ico|swf|css|js)(\?.*)?$") {
+	# Always cache the following file types for all users. This list of extensions
+	# appears twice, once here and again in vcl_fetch so make sure you edit both
+	# and keep them equal.
+	if (req.url ~ "(?i)\.(pdf|asc|dat|txt|doc|docx|xls|ppt|tgz|csv|png|gif|jpeg|jpg|ico|swf|css|js)(\?.*)?$") {
+		unset req.http.Cookie;
+	}
+	 
+	# Remove all cookies that Drupal doesn't need to know about. We explicitly
+	# list the ones that Drupal does need, the SESS and NO_CACHE. If, after
+	# running this code we find that either of these two cookies remains, we
+	# will pass as the page cannot be cached.
+	if (req.http.Cookie) {
+		set req.http.Cookie = ";" + req.http.Cookie;
+		set req.http.Cookie = regsuball(req.http.Cookie, "; +", ";");   
+		set req.http.Cookie = regsuball(req.http.Cookie, ";(S{1,2}ESS[a-z0-9]+|NO_CACHE|context_breakpoints)=", "; \1=");
+		set req.http.Cookie = regsuball(req.http.Cookie, ";[^ ][^;]*", "");
+		set req.http.Cookie = regsuball(req.http.Cookie, "^[; ]+|[; ]+$", "");
+
+		if (req.http.Cookie == "") {
+			# If there are no remaining cookies, remove the cookie header. If there
+			# aren't any cookie headers, Varnish's default behavior will be to cache
+			# the page.
 			unset req.http.Cookie;
-		}
-		 
-		# Remove all cookies that Drupal doesn't need to know about. We explicitly
-		# list the ones that Drupal does need, the SESS and NO_CACHE. If, after
-		# running this code we find that either of these two cookies remains, we
-		# will pass as the page cannot be cached.
-		if (req.http.Cookie) {
-			set req.http.Cookie = ";" + req.http.Cookie;
-			set req.http.Cookie = regsuball(req.http.Cookie, "; +", ";");   
-			set req.http.Cookie = regsuball(req.http.Cookie, ";(S{1,2}ESS[a-z0-9]+|NO_CACHE|context_breakpoints)=", "; \1=");
-			set req.http.Cookie = regsuball(req.http.Cookie, ";[^ ][^;]*", "");
-			set req.http.Cookie = regsuball(req.http.Cookie, "^[; ]+|[; ]+$", "");
-
-			if (req.http.Cookie == "") {
-				# If there are no remaining cookies, remove the cookie header. If there
-				# aren't any cookie headers, Varnish's default behavior will be to cache
-				# the page.
-				unset req.http.Cookie;
-			} else {
-				# If there is any cookies left (a session or NO_CACHE cookie), do not
-				# cache the page. Pass it on to Apache directly.
-				return (pass);
-			}
+		} else {
+			# If there is any cookies left (a session or NO_CACHE cookie), do not
+			# cache the page. Pass it on to Apache directly.
+			return (pass);
 		}
 	}
 }
+
 sub vcl_hit { 
 	if (req.request == "PURGE") {
         purge;
